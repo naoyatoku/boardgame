@@ -456,7 +456,8 @@ public:
                     std::chrono::steady_clock::now() - t0).count();
                 if (used >= budget_ms) break;
             }
-            int leaf = select(root);
+            int leaf = select(root);    //expand‚ğ‚·‚éB
+
             int winner;
             if (nodes[leaf].board.done) {
                 winner = nodes[leaf].board.winner;

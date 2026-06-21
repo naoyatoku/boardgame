@@ -3,5 +3,5 @@
     <Platform Name="x64" />
     <Platform Name="x86" />
   </Configurations>
-  <Project Path="sofcon/sofcon.vcxproj" />
+  <Project Path="sofcon/sofcon.vcxproj" Id="565fe7f8-8c2c-4100-bd4b-c5f33bfd55d4" />
 </Solution>

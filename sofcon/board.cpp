@@ -32,6 +32,7 @@ namespace game
         Pos operator=(const Pos&p){
             x = p.x;
             y = p.y;
+            return *this;
         }
         //ベクトル足し算です。
         Pos operator+(const Pos&p) const{
@@ -52,7 +53,7 @@ namespace game
                 const Pos p = va_arg(ap,Pos);
                 cells[i]= p.idx();
             }
-            for(int i=n  ; n < 3 ; ++i) { cells[i]=0; }         //残りを0保証します。
+            for(int i=n  ; i < 3 ; ++i) { cells[i]=0; }         //残りを0保証します。
             sort();
         }
         void sort(){
@@ -73,12 +74,12 @@ namespace game
     };
 
     //隣接4方向です。
-    static const Pos _dX[4] =  { {-1,0},{1,0},{0,-1},{0,1}  };
+    static const Pos _dX[4] =  { Pos(-1,0),Pos(1,0),Pos(0,-1),Pos(0,1) };
     static mt19937 rng((uint32_t)chrono::steady_clock::now().time_since_epoch().count());
 
     //assertは作っておきます。
    
-    void _aseert( bool a , const char*fmt , ...){
+    void _assert( bool a , const char*fmt , ...){
         if(!a){
             va_list ap; va_start(ap,fmt);
             vprintf(fmt , ap);
@@ -93,42 +94,43 @@ namespace game
 // ------------------------------------------------------------------ //
 //  Boardclass      ※常にMAXN×MAXNをとるようにします。
 // ------------------------------------------------------------------ //
-struct board {
-    const   int n_all_player;          //縦横幅と全プレイヤー数
-    char    _st[H_SIZ][W_SIZ];         //ステージ
-    int     cur_player;     // 1-indexed
-    int     n_empty;        //
-    bool    done;          //
-    int     winner;         //
+class board 
+{
+protected:
+public:
+    const   int n_all_player;     //縦横幅と全プレイヤー数
+    char    _st[H_SIZ][W_SIZ];    //ステージ
+    int     cur_player;           // 1-indexed
+    int     n_empty;              //
+    int     winner;               //                                
 
     //=======================================================================================================
     //      constuctor
     //=======================================================================================================
-    board(const int bd[][W_SIZ], int np, int cur) : n_all_player(np) , cur_player(cur)
+    board(const char st[][W_SIZ], int np, int cur) : n_all_player(np) , cur_player(cur),winner(-1)  //※0でもいいがわかりやすく
     {
-        n_empty= 0;            //空きますの数
-        done = false;          //
-        winner = 0;
-        //ステージコピーします。
-        for (int r = 0; r < H_SIZ ; ++r) {
-            for (int c = 0; c < W_SIZ; ++c) {
-               _st[r][c] = (char)bd[r][c];
-                if (_st[r][c] == EMPTY) ++n_empty;
-            }
-        }
+        n_empty = copy_grid( _st , st );        //ステージのコピーと空き領域の
+    }
+    //現在の盤面から、mvを打った後の盤面を作ります。
+    board(const board &bd , const Move &mv) : n_all_player(bd.n_all_player),winner(bd.winner)
+    {
+        n_empty = copy_grid(_st , bd._st);
+        apply(mv);        //この状態でapply()します。
     }
     //=======================================================================================================
-    //  
+    //  ここで現在の盤面に、新しい手を打つ動作です。
+    //  cur_playerは、打つ前の盤面での手番のプレイヤーです。
+    //  applyすると、
     //=======================================================================================================
     void apply(const Move &mv) {
         for (int i = 0; i < mv.n; ++i) {
             Pos p(mv.cells[i]);
-            _st[p.y][p.x] = p.idx();
+            _st[p.y][p.x] = cur_player;     //プレイヤー番号を書く。
         }
         //空きを減らして、もし全部消せたら、終了です。
-        if ( (n_empty -= mv.n) == 0) {  done = true; winner = cur_player;    }
+        if ( (n_empty -= mv.n) == 0) {  winner = cur_player;    }       //ここで勝者が確定。
         else {  //もし終了でなければ、プレイヤーを進める。
-            cur_player = (cur_player+1) % n_all_player;
+            cur_player = (cur_player % n_all_player) + 1;
         }
     }
     //とれる手をすべて列挙します。
@@ -139,6 +141,24 @@ struct board {
     int     val(const Pos& p)const          {   return _st[p.y][p.x];                       }
     //空き(取得可能)かどうか
     bool    avail_to_get(const Pos& p)const {   return in_range(p)==true && val(p)==EMPTY;  }
+
+    //ステージのグリッドをコピーする。
+    int copy_grid( char dst[H_SIZ][W_SIZ] , const char src[H_SIZ][W_SIZ] )const
+    {
+        int empty;
+        for (int r = 0; r < H_SIZ ; ++r) {
+            for (int c = 0; c < W_SIZ; ++c) {
+               dst[r][c] = (char)src[r][c];
+                if (dst[r][c] == EMPTY) ++empty;
+            }
+        }
+        return empty;
+    }
+    //終了しているか
+    bool done()const{
+        return winner>0;
+    }
+
 };
 
 
@@ -193,7 +213,7 @@ void board::enum_all_moves( vector<Move>& moves) const{
         return a.cells[2] < b.cells[2];
     });
     moves.erase(std::unique(moves.begin(), moves.end(), [](const Move& a, const Move& b) {      //消去用ラムダ。全要素同じならば消します。
-        if( a.n == b.n) return false;                                                           //これはn個しか比較しないようします。
+        if( a.n != b.n) return false;                                                           //これはn個しか比較しないようします。
         for(int i=0 ; i < a.n  ; ++i){
             if(a.cells[i] != b.cells[i]) return false;
         }
