@@ -140,6 +140,8 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="board.cpp" />
+    <ClCompile Include="nn.cpp" />
+    <ClCompile Include="parity.cpp" />
     <ClCompile Include="prog.cpp" />
     <ClCompile Include="sofcon.cpp" />
     <ClCompile Include="solver.cpp" />

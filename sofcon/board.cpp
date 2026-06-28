@@ -12,26 +12,39 @@ namespace game
     const   int W_SIZ   = 15;
     //各種タイル
     const   int WALL   = -1;
-    const   int EMPTY  = 0;
+    const   int EMPTY  = 0;    
     //1-は各プレイヤー陣地です。
 
+    //列挙する打ち手の制限です。
+    #define DEFAULT_ENUM_LIMIT  256
+
+    void _assert(bool a, const char* fmt, ...) {
+        if (!a) {
+            va_list ap; va_start(ap, fmt);
+            vprintf(fmt, ap);
+            exit(1);
+        }
+    }
+
+    //使いやすいようにインデックスと座標の両方を持たせてみます。
     struct Pos {        //グリッド上の位置を表します。こちらの使いやすいようにグリッドサイズを固定します。
         int y;
         int x;
+        int idx;
+
         Pos() : x(0),y(0){}
-        Pos(int _x,int _y) : x(_x) , y(_y){}
-        Pos(int idx){
-            y = idx/H_SIZ;
-            x = idx%W_SIZ;
-        }
+        Pos(int _x,int _y) : x(_x) , y(_y)  {     idx = (y * W_SIZ) + x;            }
+        Pos(int _idx) : idx(_idx)           {      y = idx/W_SIZ; x = idx%W_SIZ;    }
         //配列のインデックスを返します。
-        int idx()const{
+/*        int idx()const{
             return (y*W_SIZ) + x;
         }
-        //コピーコンストラクタのために実装します。
+            */
+        //コピーコンストラクタのために実装します。これいらないんですかね
         Pos operator=(const Pos&p){
             x = p.x;
             y = p.y;
+            idx = p.idx;
             return *this;
         }
         //ベクトル足し算です。
@@ -42,35 +55,52 @@ namespace game
         bool operator==(const Pos&p)const{
             return (x==p.x) && (y==p.y);
         }
+        bool operator!=(const Pos& p)const {
+            return ! operator==(p);
+        }
+
+        bool operator>(const Pos&p)const{
+            return idx > p.idx;
+        }
+        bool operator<(const Pos&p)const{
+            return idx < p.idx;
+        }
+
     };
     struct Move {
-        int cells[3];
+        Pos cells[10];
         int n;
-        Move(int n ,...){
-            if(n>3)n=3;
-            va_list ap;  va_start(ap,n);
-            for(int i=0 ; i < n ; ++i){
-                const Pos p = va_arg(ap,Pos);
-                cells[i]= p.idx();
+        Move(int _n ,...) : n(0) {
+            va_list ap;  va_start(ap,_n);
+            for(int i=0 ; i < _n ; ++i){
+                cells[i]=va_arg(ap,Pos);
             }
-            for(int i=n  ; i < 3 ; ++i) { cells[i]=0; }         //残りを0保証します。
-            sort();
+            std::sort(cells , cells+n);
         }
-        void sort(){
-            if(n==3){
-                if (cells[1] > cells[2])    swap( cells[1] , cells[2] );
-                if (cells[0] > cells[1])    swap( cells[0] , cells[1] );
-                if (cells[1] > cells[2])    swap( cells[1] , cells[2] );
-            }else if(n==2){
-                if (cells[0] > cells[1])    swap( cells[0] , cells[1] );                
-            }
-        }
+        //default
+        Move(): n(0){}
         //for copy constructor
         Move operator=(const Move &m){
             for(int i=0 ; i < 3 ; ++i){cells[i]=m.cells[i];}
             n = m.n;
             return *this;
         }
+        //含まれているかチェックします。
+        bool include(const Pos&c)const{
+            for(int i=0 ; i < n ; ++i){
+                if(cells[i].idx == c.idx)return true;
+            }
+            return false;
+        }
+        //新たにPosを足す。
+        Move add(const Pos&new_c)
+        {
+            _assert( (n+1) < 10 , "Move::add() overflow");
+            cells[n] = new_c;
+            n++;
+            return *this;
+        }
+
     };
 
     //隣接4方向です。
@@ -79,13 +109,7 @@ namespace game
 
     //assertは作っておきます。
    
-    void _assert( bool a , const char*fmt , ...){
-        if(!a){
-            va_list ap; va_start(ap,fmt);
-            vprintf(fmt , ap);
-            exit(1);
-        }
-    }
+
 };
 //
 namespace game
@@ -98,23 +122,24 @@ class board
 {
 protected:
 public:
-    const   int n_all_player;     //縦横幅と全プレイヤー数
-    char    _st[H_SIZ][W_SIZ];    //ステージ
-    int     cur_player;           // 1-indexed
-    int     n_empty;              //
-    int     winner;               //                                
+    const   int n_all_player;       //縦横幅と全プレイヤー数
+    const   int n_max_takes;        //1回にとれるセル数
+    char    _st[H_SIZ][W_SIZ];      //ステージ
+    int     cur_player;             // 1-indexed
+    int     n_empty;                //
+    int     winner;                 //                                
 
     //=======================================================================================================
     //      constuctor
     //=======================================================================================================
-    board(const char st[][W_SIZ], int np, int cur) : n_all_player(np) , cur_player(cur),winner(-1)  //※0でもいいがわかりやすく
+    board(const char st[][W_SIZ], int np, int cur,int max_takes) : n_all_player(np) , cur_player(cur),n_max_takes(max_takes) , winner(-1)  //※0でもいいがわかりやすく
     {
         n_empty = copy_grid( _st , st );        //ステージのコピーと空き領域の
     }
     //現在の盤面から、mvを打った後の盤面を作ります。
-    board(const board &bd , const Move &mv) : n_all_player(bd.n_all_player),winner(bd.winner)
+    board(const board &src , const Move &mv) : n_all_player(src.n_all_player),n_max_takes(src.n_max_takes) , winner(src.winner)
     {
-        n_empty = copy_grid(_st , bd._st);
+        n_empty = copy_grid(_st , src._st);
         apply(mv);        //この状態でapply()します。
     }
     //=======================================================================================================
@@ -135,6 +160,8 @@ public:
     }
     //とれる手をすべて列挙します。
     void    enum_all_moves(vector<Move>& mv)const;
+    void    enum_all_moves_sub(vector<Move>& mv,Move seed,int limit = DEFAULT_ENUM_LIMIT)const;
+
     //レンジを外れているか壁の場合
     bool    in_range(const Pos &p)const     {   if (p.y < 0 || p.y >= H_SIZ || p.x < 0 || p.x >= W_SIZ) {return false;}        return true;    }
     //Posを指定して値をとる
@@ -158,14 +185,69 @@ public:
     bool done()const{
         return winner>0;
     }
-
 };
-
-
 
 //=======================================================================================================
 //      現在のボードでとれる手を全部列挙します。
 //=======================================================================================================
+void    board::enum_all_moves_sub(vector<Move>& out,Move seed,int limit )const {
+    const int anchor = seed.cells[0].idx;
+    //まず最初のseedについて、outにたします。
+    out.push_back(seed);        //n=1のリストとなります。
+    int start_idx = out.size()-1;              //startが、outの中の
+    for( int n= 1 ; n < n_max_takes ; ++n)    {     //個数分のセルを作ります。
+        //------------------------------------------------------------------------------------------------------
+        //  n個のセルを持つoutはstart_idxから始まり、このループの最後にn+1個のMoveが積み重なっていきます。
+        //  もし前段でセルが足されずに、n個のセルがない場合は、
+        //  start_idxがout[start_idx]が配列の外になりますのでこのループに入りません。
+        //------------------------------------------------------------------------------------------------------
+        for(int i=start_idx ; (i < out.size()) && (out[i].n==n) ; ++i , ++start_idx ){      //out[i]の各セルの隣接セルで空いているものを足していきます。
+            for(int j=0 ; j < out[i].n ; ++j ){                       //out[i]の持っているセルの個数
+                for(int d = 0 ; d < 4 ; ++d){                         //  4近傍
+                    Pos cell = out[i].cells[j] + _dX[d];               //  4隣接の一つを作る。
+                    if(in_range(cell)!=true )         continue;       //  ステージ範囲内
+                    if(_st[cell.y][cell.x]!=EMPTY)    continue;       //  空きのみ
+                    if(cell.idx < anchor)             continue;       //  前のものは考慮済
+                    if(out[i].include(cell))          continue;       //  重複しているのは除外
+                    //OKなので、out[i]に新しいセルをくっつけたものを足していきます。(n+1)個のセルになるはずです。
+                    {
+                        Move    new_mv = out[i];
+                        out.push_back(new_mv.add(cell));
+                        if(out.size()==limit)goto _fin;     //個数制限に来たら強制終了です。
+                    }
+                }
+            }
+        }
+    }
+_fin:;
+}
+//void    enum_all_moves(vector<Move>& mv)const;
+void board::enum_all_moves(std::vector<Move>& out)const
+{
+    out.clear();
+    for (int y = 0; y < H_SIZ ; ++y)
+        for (int x = 0; x < W_SIZ; ++x) {
+            if (_st[y][x] != EMPTY) continue;
+//            Move m{}; m.n=1; m.cells[0]=r*b.W+c;
+            enum_all_moves_sub( out , Move(1,Pos(x,y)) );
+        }
+    // 各手のセルをソートして正準化
+    for (Move& m : out)
+        std::sort(m.cells, m.cells+m.n);
+    // 重複除去
+    std::sort(out.begin(), out.end(), [](const Move& a, const Move& b){
+        if (a.n!=b.n) return a.n<b.n;
+        for (int i=0;i<a.n;i++) if (a.cells[i]!=b.cells[i]) return a.cells[i]<b.cells[i];
+        return false;
+    });
+    out.erase(std::unique(out.begin(), out.end(), [](const Move& a, const Move& b){
+        if (a.n!=b.n) return false;
+        for (int i=0;i<a.n;i++) if (a.cells[i]!=b.cells[i]) return false;
+        return true;
+    }), out.end());
+}
+
+#if 0
 void board::enum_all_moves( vector<Move>& moves) const{
     moves.clear();
     for (int y = 0; y < H_SIZ ; ++y ) {                   //    y
@@ -201,6 +283,11 @@ void board::enum_all_moves( vector<Move>& moves) const{
             }
         }
     }
+
+    //max_take
+
+
+
     //================================================================================
     //  並び変えて、重複を取ります。
     //================================================================================
@@ -220,6 +307,7 @@ void board::enum_all_moves( vector<Move>& moves) const{
         return true;
     }), moves.end());
 }
+#endif
 
 };      //namespace
 
